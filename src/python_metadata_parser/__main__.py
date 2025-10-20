@@ -55,6 +55,9 @@ def get_package_links(package_name: str) -> list[str]:
             ret.append(link)
             if metadata_pattern.search(match.group(0)):
                 ret.append(link + ".metadata")
+    ret.sort(
+        key=lambda x: tuple(int(x) for x in re.findall(r"(\d+)", x.rsplit("/", maxsplit=1)[-1]))
+    )
     return ret
 
 
