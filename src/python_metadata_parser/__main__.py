@@ -7,6 +7,7 @@ import re
 import zipfile
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin
 from urllib.request import Request
 from urllib.request import urlopen
 
@@ -23,20 +24,37 @@ def download(url: str, headers: dict[str, str] | None = None) -> bytes:
         return f.read()
 
 
+_default_index = "https://pypi.org/simple/"
+
+
 def get_package_links(package_name: str) -> list[str]:
     ret: list[str] = []
-    index_url = os.environ.get("PIP_INDEX_URL", "https://pypi.org/simple/").rstrip("/")
+    index_url = os.environ.get("PIP_INDEX_URL", _default_index).rstrip("/")
     url = f"{index_url}/{package_name}/"
-    html = download(url, headers={"Accept": "application/vnd.pypi.simple.v1+json"})
+    headers = (
+        {"Accept": "application/vnd.pypi.simple.v1+json"}
+        if index_url.startswith(_default_index)
+        else {}
+    )
+    html = download(url, headers=headers)
     try:
         data = json.loads(html)
         for file in data["files"]:
             ret.append(file["url"])
             if file.get("core-metadata", False) is not False:
                 ret.append(file["url"] + ".metadata")
-    except json.JSONDecodeError as e:
-        msg = f"Could not fetch package metadata for {package_name}: {e!s}"
-        raise ValueError(msg) from e
+    except json.JSONDecodeError:
+        pattern = re.compile(r'<[^>]*href=["\'](?P<link>[^"\']+)["\'][^>]*>')
+        metadata_pattern = re.compile(
+            r'(data-dist-info-metadata|data-core-metadata)=["\'](?P<hash>[^"\']+)["\']'
+        )
+        for match in pattern.finditer(html.decode("utf-8")):
+            link = match.group("link")
+            link = link.rsplit("#", maxsplit=1)[0]
+            link = urljoin(url, link)
+            ret.append(link)
+            if metadata_pattern.search(match.group(0)):
+                ret.append(link + ".metadata")
     return ret
 
 
@@ -77,6 +95,9 @@ def main(argv: list[str] | tuple[str, ...] | None = None) -> int:
                 dep_name, *_version = re.split(r"[=<>]+", target, maxsplit=1)
                 version = _version[0] if _version else ""
                 links = get_package_links(dep_name)
+                if not links:
+                    msg = f"Could not find package '{dep_name}' on the index"
+                    raise ValueError(msg)
                 target = links[-1]
                 for link in links:
                     base_name = os.path.basename(link)
