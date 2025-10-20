@@ -55,6 +55,9 @@ def get_package_links(package_name: str) -> list[str]:
             ret.append(link)
             if metadata_pattern.search(match.group(0)):
                 ret.append(link + ".metadata")
+    ret.sort(
+        key=lambda x: tuple(int(x) for x in re.findall(r"(\d+)", x.rsplit("/", maxsplit=1)[-1]))
+    )
     return ret
 
 
@@ -98,7 +101,7 @@ def main(argv: list[str] | tuple[str, ...] | None = None) -> int:
                 if not links:
                     msg = f"Could not find package '{dep_name}' on the index"
                     raise ValueError(msg)
-                target = links[-1]
+                target = next(x for x in reversed(links) if ".whl" in x)
                 for link in links:
                     base_name = os.path.basename(link)
                     if version in base_name and base_name.endswith((".whl", ".whl.metadata")):
