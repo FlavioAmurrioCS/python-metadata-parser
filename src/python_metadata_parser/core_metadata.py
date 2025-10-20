@@ -59,6 +59,21 @@ if TYPE_CHECKING:
     )
     # History
 
+__list_fields__ = {
+    "Dynamic",
+    "Platform",
+    "Supported-Platform",
+    "License-File",
+    "Classifier",
+    "Requires-Dist",
+    "Requires-External",
+    "Project-URL",
+    "Provides-Extra",
+    "Provides-Dist",
+    "Obsoletes-Dist",
+    "Requires",
+}
+
 
 def normalize(name: str) -> str:
     import re
@@ -74,6 +89,9 @@ def loads(data: bytes | bytearray | str) -> RawCoreMetadata:
 
     ret: RawCoreMetadata = {}  # type: ignore[typeddict-item]
     for k, v in msg.items():
+        if not isinstance(v, str):
+            logger.debug("Was not parsed as a string! %s", v)
+            v = str(v)  # noqa: PLW2901
         if k not in ret:
             ret[k] = v  # type: ignore[literal-required]
         else:
@@ -84,6 +102,13 @@ def loads(data: bytes | bytearray | str) -> RawCoreMetadata:
 
     ret["Body"] = str(msg.get_payload())
 
+    for k, v in ret.items():  # type: ignore[assignment]
+        if k in __list_fields__:
+            if not isinstance(v, list):
+                ret[k] = [v]  # type: ignore[literal-required]
+        elif not isinstance(v, str):
+            logger.error("%s should not be a list!", k)
+
     return ret
 
 
@@ -91,27 +116,27 @@ def update_deprecated_metadata_fields(data: RawCoreMetadata) -> RawCoreMetadata:
     data = data.copy()
     home_page = data.pop("Home-page", None)
     if home_page:
-        logger.warning("The 'Home-page' field is deprecated, use 'Project-URL' instead.")
+        logger.info("The 'Home-page' field is deprecated, use 'Project-URL' instead.")
         data.setdefault("Project-URL", []).append(f"Homepage, {home_page}")
 
     download_url = data.pop("Download-URL", None)
     if download_url:
-        logger.warning("The 'Download-URL' field is deprecated, use 'Project-URL' instead.")
+        logger.info("The 'Download-URL' field is deprecated, use 'Project-URL' instead.")
         data.setdefault("Project-URL", []).append(f"Download, {download_url}")
 
     requires = data.pop("Requires", None)
     if requires:
-        logger.warning("The 'Requires' field is deprecated, use 'Requires-Dist' instead.")
+        logger.info("The 'Requires' field is deprecated, use 'Requires-Dist' instead.")
         data.setdefault("Requires-Dist", []).extend(requires)
 
     provides = data.pop("Provides", None)
     if provides:
-        logger.warning("The 'Provides' field is deprecated, use 'Provides-Dist' instead.")
+        logger.info("The 'Provides' field is deprecated, use 'Provides-Dist' instead.")
         data.setdefault("Provides-Dist", []).append(provides)
 
     obsoletes = data.pop("Obsoletes", None)
     if obsoletes:
-        logger.warning("The 'Obsoletes' field is deprecated, use 'Obsoletes-Dist' instead.")
+        logger.info("The 'Obsoletes' field is deprecated, use 'Obsoletes-Dist' instead.")
         data.setdefault("Obsoletes-Dist", []).append(obsoletes)
 
     return data
@@ -188,10 +213,10 @@ def to_pyproject_toml(data: RawCoreMetadata) -> PyProjectProject:
         "dynamic": data.get("Dynamic") or [],  # type: ignore[typeddict-item]
         "description": data.get("Summary") or "",
         "readme": "README.md",
-        "requires-python": data.get("Requires-Python") or "",
+        "requires-python": data.get("Requires-Python") or ">=3.10",
         "license": data.get("License-Expression") or data.get("License") or "MIT",
         "license-files": data.get("License-File") or [],
-        "keywords": re.split(r"[\s,]+", data.get("Keywords") or ""),
+        "keywords": [x for x in re.split(r"[\s,]+", data.get("Keywords") or "") if x],
         "authors": authors,
         "maintainers": maintainers,
         "classifiers": data.get("Classifier") or [],
