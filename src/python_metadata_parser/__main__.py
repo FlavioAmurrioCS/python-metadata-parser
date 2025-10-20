@@ -101,7 +101,7 @@ def main(argv: list[str] | tuple[str, ...] | None = None) -> int:
                 if not links:
                     msg = f"Could not find package '{dep_name}' on the index"
                     raise ValueError(msg)
-                target = links[-1]
+                target = next(x for x in reversed(links) if ".whl" in x)
                 for link in links:
                     base_name = os.path.basename(link)
                     if version in base_name and base_name.endswith((".whl", ".whl.metadata")):
